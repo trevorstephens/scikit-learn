@@ -45,6 +45,7 @@ REG_TREES = {
     "Presort-DecisionTreeRegressor": partial(DecisionTreeRegressor,
                                              splitter="presort-best"),
     "ExtraTreeRegressor": ExtraTreeRegressor,
+    "ConditionalInferenceTreeRegressor": ConditionalInferenceTreeRegressor,
 }
 
 ALL_TREES = dict()

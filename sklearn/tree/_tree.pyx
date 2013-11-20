@@ -1037,6 +1037,196 @@ cdef inline void sort(DTYPE_t* X, SIZE_t X_stride, SIZE_t current_feature,
 
         samples[index] = tmp
 
+cdef class GlobalSignificanceSplitter(Splitter):
+    """Splitter that uses significance testing to find the best split, for conditional inference trees."""
+    def __reduce__(self):
+        return (BestSplitter, (self.criterion,
+                               self.max_features,
+                               self.min_samples_leaf,
+                               self.random_state), self.__getstate__())
+
+    cdef void node_split(self, SIZE_t* pos, SIZE_t* feature, double* threshold) nogil:
+        """Find the best split on node samples[start:end]."""
+        # Find the best split
+        cdef SIZE_t* samples = self.samples
+        cdef SIZE_t start = self.start
+        cdef SIZE_t end = self.end
+
+        cdef SIZE_t* features = self.features
+        cdef SIZE_t n_features = self.n_features
+
+        cdef DTYPE_t* X = self.X
+        cdef SIZE_t X_stride = self.X_stride
+        cdef DOUBLE_t* sample_weight = self.sample_weight 
+        cdef DOUBLE_t* y = self.y       
+        cdef SIZE_t max_features = self.max_features
+        cdef SIZE_t min_samples_leaf = self.min_samples_leaf
+        cdef UINT32_t* random_state = &self.rand_r_state
+
+        cdef double best_impurity = INFINITY
+        cdef SIZE_t best_pos = end
+        cdef SIZE_t best_feature
+        cdef double best_threshold
+
+        cdef double current_impurity
+        cdef SIZE_t current_pos
+        cdef SIZE_t current_feature
+        cdef double current_threshold
+
+        cdef SIZE_t f_idx, f_i, f_j, p, tmp
+        cdef SIZE_t visited_features = 0
+
+        cdef SIZE_t partition_start
+        cdef SIZE_t partition_end
+
+        cdef SIZE_t y_stride = self.y_stride
+        # cdef SIZE_t n_outputs = self.n_outputs
+        cdef SIZE_t n_outputs = 1
+        cdef SIZE_t i = 0
+        cdef SIZE_t k = 0
+        cdef DOUBLE_t y_ik = 0.0
+        cdef DOUBLE_t w = 1.0
+
+        # at first I will allocate and deallocate this within node_split
+        # later I can put it in the constructor
+        cdef double* exp_h
+        exp_h = <double*> calloc(n_outputs, sizeof(double))
+        cdef double* cov_h
+        cov_h = <double*> calloc(n_outputs * n_outputs, sizeof(double))
+
+        cdef DOUBLE_t tmp2 
+        cdef SIZE_t l = 0
+        cdef DOUBLE_t y_il = 0.0
+
+        # Compute expectation and covariance of the influence function of the responce
+        for k from 0 <= k < n_outputs:
+            exp_h[k] = 0
+            for l from 0 <= l < n_outputs:
+                cov_h[k * n_outputs + l] = 0
+
+
+        with gil:
+            print n_outputs, start, end, y_stride
+
+        for p from start <= p < end:
+            i = samples[p]
+            if sample_weight != NULL:
+                w = sample_weight[i]            
+            for k from 0 <= k < n_outputs:
+                y_ik = y[i * y_stride + k]
+                exp_h[k] += w * y_ik
+        with gil:
+            print exp_h[0]
+
+        for p from start <= p < end:
+            i = samples[p]
+            if sample_weight != NULL:
+                w = sample_weight[i]            
+            for k from 0 <= k < n_outputs:
+                y_ik = y[i * y_stride + k]
+                tmp2 = w * (y_ik - exp_h[k])
+                for l from 0 <= l < n_outputs:
+                    y_il = y[i * y_stride + l]
+                    cov_h[k * n_outputs + l] = tmp2 * (y_il - exp_h[l])
+
+
+        free(exp_h)
+        free(cov_h)
+
+        # Compute expectation and covariance of the covariates
+
+        # Assemble the expectation and covariance of the linear statistic
+
+        # Apply criterion whether to split
+
+
+
+        for f_idx from 0 <= f_idx < n_features:
+            # Draw a feature at random
+            f_i = n_features - f_idx - 1
+            f_j = rand_int(n_features - f_idx, random_state)
+
+            tmp = features[f_i]
+            features[f_i] = features[f_j]
+            features[f_j] = tmp
+
+            current_feature = features[f_i]
+
+            # Sort samples along that feature
+            sort(X, X_stride, current_feature, samples+start, end-start)
+
+            # Evaluate all splits
+            self.criterion.reset()
+            p = start
+
+            while p < end:
+                while ((p + 1 < end) and
+                       (X[X_stride * samples[p + 1] + current_feature] <=
+                        X[X_stride * samples[p] + current_feature] + 1e-7)):
+                    p += 1
+
+                # (p + 1 >= end) or (X[samples[p + 1], current_feature] >
+                #                    X[samples[p], current_feature])
+                p += 1
+                # (p >= end) or (X[samples[p], current_feature] >
+                #                X[samples[p - 1], current_feature])
+
+                if p < end:
+                    current_pos = p
+
+                    # Reject if min_samples_leaf is not guaranteed
+                    if (((current_pos - start) < min_samples_leaf) or
+                        ((end - current_pos) < min_samples_leaf)):
+                       continue
+
+                    self.criterion.update(current_pos)
+                    current_impurity = self.criterion.children_impurity()
+
+                    if current_impurity < (best_impurity - 1e-7):
+                        best_impurity = current_impurity
+                        best_pos = current_pos
+                        best_feature = current_feature
+
+                        current_threshold = (X[X_stride * samples[p - 1] + current_feature] +
+                                             X[X_stride * samples[p] + current_feature]) / 2.0
+
+                        if current_threshold == X[X_stride * samples[p] + current_feature]:
+                            current_threshold = X[X_stride * samples[p - 1] + current_feature]
+
+                        best_threshold = current_threshold
+
+            if best_pos == end: # No valid split was ever found
+                continue
+
+            # Count one more visited feature
+            visited_features += 1
+
+            if visited_features >= max_features:
+                break
+
+        # Reorganize into samples[start:best_pos] + samples[best_pos:end]
+        if best_pos < end:
+            partition_start = start
+            partition_end = end
+            p = start
+
+            while p < partition_end:
+                if X[X_stride * samples[p] + best_feature] <= best_threshold:
+                    p += 1
+
+                else:
+                    partition_end -= 1
+
+                    tmp = samples[partition_end]
+                    samples[partition_end] = samples[p]
+                    samples[p] = tmp
+
+        # Return values
+        pos[0] = best_pos
+        feature[0] = best_feature
+        threshold[0] = best_threshold
+
+
 
 cdef class RandomSplitter(Splitter):
     """Splitter for finding the best random split."""

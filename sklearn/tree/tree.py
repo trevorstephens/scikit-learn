@@ -33,7 +33,9 @@ from . import _tree
 __all__ = ["DecisionTreeClassifier",
            "DecisionTreeRegressor",
            "ExtraTreeClassifier",
-           "ExtraTreeRegressor"]
+           "ExtraTreeRegressor",
+           "ConditionalInferenceTreeRegressor"]
+
 
 
 # =============================================================================
@@ -47,7 +49,8 @@ CRITERIA_CLF = {"gini": _tree.Gini, "entropy": _tree.Entropy}
 CRITERIA_REG = {"mse": _tree.MSE}
 SPLITTERS = {"best": _tree.BestSplitter,
              "presort-best": _tree.PresortBestSplitter,
-             "random": _tree.RandomSplitter}
+             "random": _tree.RandomSplitter,
+             "conditional": _tree.GlobalSignificanceSplitter}
 
 
 # =============================================================================
@@ -750,3 +753,56 @@ class ExtraTreeRegressor(DecisionTreeRegressor):
                  "fly when accessing the feature_importances_ attribute. "
                  "This parameter will be removed in 0.16.",
                  DeprecationWarning)
+
+class ConditionalInferenceTreeRegressor(DecisionTreeRegressor):
+    """A conditional inference tree regressor.
+
+    Condtional inferece trees separate the variable selection/stopping process, 
+    from the search for an optimal cutpoint. Variables to split on are selected 
+    with a global statistical significance test that takes into account the fact 
+    that we are testing multiple hypotheses at the same time. If the global 
+    criterion is met then we split on the value that maximizes the significance 
+    using permutation tests. 
+
+    Conditional inference trees avoid overfitting, and the selection bias towards
+    categorical covariates with many levels.
+
+    See also
+    --------
+    ConditionalInferenceTreeClassifier
+
+    References
+    ----------
+
+    .. [1] T. Hothorn, K. Hornig, A. Zeileis, "Unbiased Recursive Partitioning: A
+    Condtional inference Framework", 
+    Journal of Computational and Graphical Statistics, Vol 15, No 3, p. 651-674, 2006.
+    """
+    def __init__(self,
+                 criterion="mse",
+                 splitter="conditional",
+                 max_depth=None,
+                 min_samples_split=2,
+                 min_samples_leaf=1,
+                 max_features="auto",
+                 random_state=None,
+                 min_density=None,
+                 compute_importances=None):
+        super(ConditionalInferenceTreeRegressor, self).__init__(criterion,
+                                                 splitter,
+                                                 max_depth,
+                                                 min_samples_split,
+                                                 min_samples_leaf,
+                                                 max_features,
+                                                 random_state)
+        if min_density is not None:
+            warn("The min_density parameter is deprecated as of version 0.14 "
+                 "and will be removed in 0.16.", DeprecationWarning)
+
+        if compute_importances is not None:
+            warn("Setting compute_importances is no longer required as "
+                 "version 0.14. Variable importances are now computed on the "
+                 "fly when accessing the feature_importances_ attribute. "
+                 "This parameter will be removed in 0.16.",
+                 DeprecationWarning)
+
