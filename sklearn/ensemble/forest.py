@@ -122,7 +122,8 @@ class BaseForest(six.with_metaclass(ABCMeta, BaseEnsemble,
                  n_jobs=1,
                  random_state=None,
                  verbose=0,
-                 warm_start=False):
+                 warm_start=False,
+                 aggregation="average"):
         super(BaseForest, self).__init__(
             base_estimator=base_estimator,
             n_estimators=n_estimators,
@@ -134,6 +135,7 @@ class BaseForest(six.with_metaclass(ABCMeta, BaseEnsemble,
         self.random_state = random_state
         self.verbose = verbose
         self.warm_start = warm_start
+        self.aggregation = aggregation
 
     def apply(self, X):
         """Apply trees in the forest to X, return leaf indices.
@@ -226,6 +228,13 @@ class BaseForest(six.with_metaclass(ABCMeta, BaseEnsemble,
                              " if bootstrap=True")
 
         random_state = check_random_state(self.random_state)
+
+        vote_methods = ["average", "weighted"]
+        if isinstance(self, ClassifierMixin):
+            vote_methods.append("majority")
+        if self.aggregation not in vote_methods:
+            raise ValueError('aggregation=%s must be one of %s'
+                             % (self.aggregation, vote_methods))
 
         if not self.warm_start:
             # Free allocated memory, if any
@@ -324,7 +333,8 @@ class ForestClassifier(six.with_metaclass(ABCMeta, BaseForest,
                  n_jobs=1,
                  random_state=None,
                  verbose=0,
-                 warm_start=False):
+                 warm_start=False,
+                 aggregation="average"):
 
         super(ForestClassifier, self).__init__(
             base_estimator,
@@ -335,7 +345,8 @@ class ForestClassifier(six.with_metaclass(ABCMeta, BaseForest,
             n_jobs=n_jobs,
             random_state=random_state,
             verbose=verbose,
-            warm_start=warm_start)
+            warm_start=warm_start,
+            aggregation=aggregation)
 
     def _set_oob_score(self, X, y):
         """Compute out-of-bag score"""
@@ -458,6 +469,10 @@ class ForestClassifier(six.with_metaclass(ABCMeta, BaseForest,
         # Check data
         X = check_array(X, dtype=DTYPE, accept_sparse="csr")
 
+        agg_fun = {"average": "predict_proba",
+                   "majority": "predict",
+                   "weighted": "apply"}
+
         # Assign chunk of trees to jobs
         n_jobs, n_trees, starts = _partition_estimators(self.n_estimators,
                                                         self.n_jobs)
@@ -465,8 +480,15 @@ class ForestClassifier(six.with_metaclass(ABCMeta, BaseForest,
         # Parallel loop
         all_proba = Parallel(n_jobs=n_jobs, verbose=self.verbose,
                              backend="threading")(
-            delayed(_parallel_helper)(e, 'predict_proba', X)
+            delayed(_parallel_helper)(e if self.aggregation != "weighted"
+                                      else e.tree_,
+                                      agg_fun[self.aggregation], X)
             for e in self.estimators_)
+
+        print all_proba
+        if self.aggregation == "weighted":
+            for e in self.estimators_:
+                print e.tree_.value
 
         # Reduce
         proba = all_proba[0]
@@ -485,6 +507,7 @@ class ForestClassifier(six.with_metaclass(ABCMeta, BaseForest,
             for k in range(self.n_outputs_):
                 proba[k] /= self.n_estimators
 
+        print proba
         return proba
 
     def predict_log_proba(self, X):
@@ -537,7 +560,8 @@ class ForestRegressor(six.with_metaclass(ABCMeta, BaseForest, RegressorMixin)):
                  n_jobs=1,
                  random_state=None,
                  verbose=0,
-                 warm_start=False):
+                 warm_start=False,
+                 aggregation="average"):
         super(ForestRegressor, self).__init__(
             base_estimator,
             n_estimators=n_estimators,
@@ -547,7 +571,8 @@ class ForestRegressor(six.with_metaclass(ABCMeta, BaseForest, RegressorMixin)):
             n_jobs=n_jobs,
             random_state=random_state,
             verbose=verbose,
-            warm_start=warm_start)
+            warm_start=warm_start,
+            aggregation=aggregation)
 
     def predict(self, X):
         """Predict regression target for X.
@@ -765,7 +790,8 @@ class RandomForestClassifier(ForestClassifier):
                  n_jobs=1,
                  random_state=None,
                  verbose=0,
-                 warm_start=False):
+                 warm_start=False,
+                 aggregation="average"):
         super(RandomForestClassifier, self).__init__(
             base_estimator=DecisionTreeClassifier(),
             n_estimators=n_estimators,
@@ -778,7 +804,8 @@ class RandomForestClassifier(ForestClassifier):
             n_jobs=n_jobs,
             random_state=random_state,
             verbose=verbose,
-            warm_start=warm_start)
+            warm_start=warm_start,
+            aggregation=aggregation)
 
         self.criterion = criterion
         self.max_depth = max_depth
@@ -914,7 +941,8 @@ class RandomForestRegressor(ForestRegressor):
                  n_jobs=1,
                  random_state=None,
                  verbose=0,
-                 warm_start=False):
+                 warm_start=False,
+                 aggregation="average"):
         super(RandomForestRegressor, self).__init__(
             base_estimator=DecisionTreeRegressor(),
             n_estimators=n_estimators,
@@ -927,7 +955,8 @@ class RandomForestRegressor(ForestRegressor):
             n_jobs=n_jobs,
             random_state=random_state,
             verbose=verbose,
-            warm_start=warm_start)
+            warm_start=warm_start,
+            aggregation=aggregation)
 
         self.criterion = criterion
         self.max_depth = max_depth
@@ -1078,7 +1107,8 @@ class ExtraTreesClassifier(ForestClassifier):
                  n_jobs=1,
                  random_state=None,
                  verbose=0,
-                 warm_start=False):
+                 warm_start=False,
+                 aggregation="average"):
         super(ExtraTreesClassifier, self).__init__(
             base_estimator=ExtraTreeClassifier(),
             n_estimators=n_estimators,
@@ -1090,7 +1120,8 @@ class ExtraTreesClassifier(ForestClassifier):
             n_jobs=n_jobs,
             random_state=random_state,
             verbose=verbose,
-            warm_start=warm_start)
+            warm_start=warm_start,
+            aggregation=aggregation)
 
         self.criterion = criterion
         self.max_depth = max_depth
@@ -1230,7 +1261,8 @@ class ExtraTreesRegressor(ForestRegressor):
                  n_jobs=1,
                  random_state=None,
                  verbose=0,
-                 warm_start=False):
+                 warm_start=False,
+                 aggregation="average"):
         super(ExtraTreesRegressor, self).__init__(
             base_estimator=ExtraTreeRegressor(),
             n_estimators=n_estimators,
@@ -1243,7 +1275,8 @@ class ExtraTreesRegressor(ForestRegressor):
             n_jobs=n_jobs,
             random_state=random_state,
             verbose=verbose,
-            warm_start=warm_start)
+            warm_start=warm_start,
+            aggregation=aggregation)
 
         self.criterion = criterion
         self.max_depth = max_depth
