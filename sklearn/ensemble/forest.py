@@ -230,8 +230,6 @@ class BaseForest(six.with_metaclass(ABCMeta, BaseEnsemble,
         random_state = check_random_state(self.random_state)
 
         vote_methods = ["average", "weighted"]
-        if isinstance(self, ClassifierMixin):
-            vote_methods.append("majority")
         if self.aggregation not in vote_methods:
             raise ValueError('aggregation=%s must be one of %s'
                              % (self.aggregation, vote_methods))
@@ -469,45 +467,56 @@ class ForestClassifier(six.with_metaclass(ABCMeta, BaseForest,
         # Check data
         X = check_array(X, dtype=DTYPE, accept_sparse="csr")
 
-        agg_fun = {"average": "predict_proba",
-                   "majority": "predict",
-                   "weighted": "apply"}
+        if self.aggregation == 'average':
+            # Assign chunk of trees to jobs
+            n_jobs, n_trees, starts = _partition_estimators(self.n_estimators,
+                                                            self.n_jobs)
 
-        # Assign chunk of trees to jobs
-        n_jobs, n_trees, starts = _partition_estimators(self.n_estimators,
-                                                        self.n_jobs)
+            # Parallel loop
+            all_proba = Parallel(n_jobs=n_jobs, verbose=self.verbose,
+                                 backend="threading")(
+                delayed(_parallel_helper)(e, 'predict_proba', X)
+                for e in self.estimators_)
 
-        # Parallel loop
-        all_proba = Parallel(n_jobs=n_jobs, verbose=self.verbose,
-                             backend="threading")(
-            delayed(_parallel_helper)(e if self.aggregation != "weighted"
-                                      else e.tree_,
-                                      agg_fun[self.aggregation], X)
-            for e in self.estimators_)
+            # Reduce
+            proba = all_proba[0]
 
-        print all_proba
-        if self.aggregation == "weighted":
-            for e in self.estimators_:
-                print e.tree_.value
+            if self.n_outputs_ == 1:
+                for j in range(1, len(all_proba)):
+                    proba += all_proba[j]
 
-        # Reduce
-        proba = all_proba[0]
+                proba /= len(self.estimators_)
 
-        if self.n_outputs_ == 1:
-            for j in range(1, len(all_proba)):
-                proba += all_proba[j]
+            else:
+                for j in range(1, len(all_proba)):
+                    for k in range(self.n_outputs_):
+                        proba[k] += all_proba[j][k]
 
-            proba /= len(self.estimators_)
+                for k in range(self.n_outputs_):
+                    proba[k] /= self.n_estimators
 
         else:
-            for j in range(1, len(all_proba)):
-                for k in range(self.n_outputs_):
-                    proba[k] += all_proba[j][k]
+            # Weighted predictions
+            leaves = self.apply(X)
+
+            proba = []
 
             for k in range(self.n_outputs_):
-                proba[k] /= self.n_estimators
 
-        print proba
+                proba_k = []
+
+                for x in leaves:
+                    values = self.estimators_[0].tree_.value[x[0]][k].copy()
+                    for j in range(1, len(x)):
+                        values += self.estimators_[j].tree_.value[x[j]][k]
+
+                    proba_k.append(values / values.sum(0))
+
+                if self.n_outputs_ == 1:
+                    proba = np.array(proba_k)
+                else:
+                    proba.append(np.array(proba_k))
+
         return proba
 
     def predict_log_proba(self, X):
@@ -597,18 +606,48 @@ class ForestRegressor(six.with_metaclass(ABCMeta, BaseForest, RegressorMixin)):
         # Check data
         X = check_array(X, dtype=DTYPE, accept_sparse="csr")
 
-        # Assign chunk of trees to jobs
-        n_jobs, n_trees, starts = _partition_estimators(self.n_estimators,
-                                                        self.n_jobs)
+        if self.aggregation == 'average':
+            # Assign chunk of trees to jobs
+            n_jobs, n_trees, starts = _partition_estimators(self.n_estimators,
+                                                            self.n_jobs)
 
-        # Parallel loop
-        all_y_hat = Parallel(n_jobs=n_jobs, verbose=self.verbose,
-                             backend="threading")(
-            delayed(_parallel_helper)(e, 'predict', X)
-            for e in self.estimators_)
+            # Parallel loop
+            all_y_hat = Parallel(n_jobs=n_jobs, verbose=self.verbose,
+                                 backend="threading")(
+                delayed(_parallel_helper)(e, 'predict', X)
+                for e in self.estimators_)
 
-        # Reduce
-        y_hat = sum(all_y_hat) / len(self.estimators_)
+            # Reduce
+            y_hat = sum(all_y_hat) / len(self.estimators_)
+
+        else:
+            # Weighted predictions
+
+            leaves = self.apply(X)
+
+            y_hat = []
+
+            for k in range(self.n_outputs_):
+
+                proba_k = []
+
+                for x in leaves:
+                    values = self.estimators_[0].tree_.value[x[0]][k].copy()[0] * \
+                             self.estimators_[0].tree_.weighted_n_node_samples[x[0]]
+                    samples = self.estimators_[0].tree_.weighted_n_node_samples[x[0]]
+                    for j in range(1, len(x)):
+                        values += self.estimators_[j].tree_.value[x[j]][k][0] * \
+                                  self.estimators_[j].tree_.weighted_n_node_samples[x[j]]
+                        samples += self.estimators_[j].tree_.weighted_n_node_samples[x[j]]
+
+                    proba_k.append(values / samples)
+
+                y_hat.append(np.array(proba_k))
+
+            if self.n_outputs_ == 1:
+                y_hat = y_hat[0]
+            else:
+                y_hat = np.array(y_hat).T
 
         return y_hat
 
