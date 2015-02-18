@@ -38,6 +38,7 @@ from ..utils.multiclass import unique_labels
 from ..utils.multiclass import type_of_target
 from ..utils.validation import _num_samples
 from ..utils.sparsefuncs import count_nonzero
+from ..utils.fixes import bincount
 
 from .base import UndefinedMetricWarning
 
@@ -847,7 +848,7 @@ def precision_recall_fscore_support(y_true, y_pred, beta=1.0, labels=None,
     if labels is None:
         labels = unique_labels(y_true, y_pred)
     else:
-        labels = np.asarray(labels)
+        labels = np.sort(labels)
 
     ### Calculate tp_sum, pred_sum, true_sum ###
 
@@ -883,17 +884,17 @@ def precision_recall_fscore_support(y_true, y_pred, beta=1.0, labels=None,
             tp_bins_weights = None
 
         if len(tp_bins):
-            tp_sum = np.bincount(tp_bins, weights=tp_bins_weights,
-                                 minlength=len(labels))
+            tp_sum = bincount(tp_bins, weights=tp_bins_weights,
+                              minlength=len(labels))
         else:
             # Pathological case
             true_sum = pred_sum = tp_sum = np.zeros(len(labels))
         if len(y_pred):
-            pred_sum = np.bincount(y_pred, weights=sample_weight,
-                                   minlength=len(labels))
+            pred_sum = bincount(y_pred, weights=sample_weight,
+                                minlength=len(labels))
         if len(y_true):
-            true_sum = np.bincount(y_true, weights=sample_weight,
-                                   minlength=len(labels))
+            true_sum = bincount(y_true, weights=sample_weight,
+                                minlength=len(labels))
 
     ### Select labels to keep ###
 
@@ -1451,8 +1452,9 @@ def hinge_loss(y_true, pred_decision, labels=None, sample_weight=None):
     >>> est = svm.LinearSVC(random_state=0)
     >>> est.fit(X, y)
     LinearSVC(C=1.0, class_weight=None, dual=True, fit_intercept=True,
-         intercept_scaling=1, loss='l2', max_iter=1000, multi_class='ovr',
-         penalty='l2', random_state=0, tol=0.0001, verbose=0)
+         intercept_scaling=1, loss='squared_hinge', max_iter=1000,
+         multi_class='ovr', penalty='l2', random_state=0, tol=0.0001,
+         verbose=0)
     >>> pred_decision = est.decision_function([[-2], [3], [0.5]])
     >>> pred_decision  # doctest: +ELLIPSIS
     array([-2.18...,  2.36...,  0.09...])
@@ -1466,8 +1468,9 @@ def hinge_loss(y_true, pred_decision, labels=None, sample_weight=None):
     >>> est = svm.LinearSVC()
     >>> est.fit(X, Y)
     LinearSVC(C=1.0, class_weight=None, dual=True, fit_intercept=True,
-         intercept_scaling=1, loss='l2', max_iter=1000, multi_class='ovr',
-         penalty='l2', random_state=None, tol=0.0001, verbose=0)
+         intercept_scaling=1, loss='squared_hinge', max_iter=1000,
+         multi_class='ovr', penalty='l2', random_state=None, tol=0.0001,
+         verbose=0)
     >>> pred_decision = est.decision_function([[-1], [2], [3]])
     >>> y_true = [0, 2, 3]
     >>> hinge_loss(y_true, pred_decision, labels)  #doctest: +ELLIPSIS

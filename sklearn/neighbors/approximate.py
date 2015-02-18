@@ -139,7 +139,7 @@ class LSHForest(BaseEstimator, KNeighborsMixin, RadiusNeighborsMixin):
         Radius from the data point to its neighbors. This is the parameter
         space to use by default for the :meth`radius_neighbors` queries.
 
-    radius_cutoff_ratio : float, optional (defualt = 0.9)
+    radius_cutoff_ratio : float, optional (default = 0.9)
         A value ranges from 0 to 1. Radius neighbors will be searched until
         the ratio between total neighbors within the radius and the total
         candidates becomes less than this value unless it is terminated by
@@ -322,7 +322,7 @@ class LSHForest(BaseEstimator, KNeighborsMixin, RadiusNeighborsMixin):
             max_depth = max_depth - 1
         return total_neighbors, total_distances
 
-    def fit(self, X):
+    def fit(self, X, y=None):
         """Fit the LSH forest on the data.
 
         This creates binary hashes of input data points by getting the
@@ -483,7 +483,7 @@ class LSHForest(BaseEstimator, KNeighborsMixin, RadiusNeighborsMixin):
         else:
             return _array_of_arrays(neighbors)
 
-    def partial_fit(self, X):
+    def partial_fit(self, X, y=None):
         """
         Inserts new data into the already fitted LSH Forest.
         Cost is proportional to new total size, so additions

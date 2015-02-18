@@ -64,6 +64,18 @@ New features
    - Added shrinkage support to :class:`lda.LDA` using two new solvers. By
      `Clemens Brunner`_ and `Martin Billinger`_.
 
+   - Added :class:`kernel_ridge.KernelRidge`, an implementation of
+     kernelized ridge regression.
+     By `Mathieu Blondel`_ and `Jan Hendrik Metzen`_.
+
+   - All solvers in :class:`linear_model.Ridge` now support `sample_weight`.
+     By `Mathieu Blondel`_.
+
+   - Added :class:`cross_validation.PredefinedSplit` cross-validation
+     for fixed user-provided cross-validation folds.
+     By `untom <https://github.com/untom>`_.
+
+
 Enhancements
 ............
 
@@ -140,6 +152,9 @@ Enhancements
 
    - Add ``n_iter_`` attribute to estimators that accept a ``max_iter`` attribute
      in their constructor. By `Manoj Kumar`_.
+  
+   - Added decision function for :class:`multiclass.OneVsOneClassifier`
+     By `Raghav R V`_ and `Kyle Beauchamp`_.
 
    - :func:`neighbors.kneighbors_graph` and :func:`radius_neighbors_graph`
      support non-Euclidean metrics. By `Manoj Kumar`_
@@ -157,6 +172,22 @@ Enhancements
      frequency for :class:`ensemble.RandomForestClassifier`,
      :class:`tree.DecisionTreeClassifier`, :class:`ensemble.ExtraTreesClassifier`
      and :class:`tree.ExtraTreeClassifier`. By `Trevor Stephens`_.
+
+   - :class:`grid_search.RandomizedSearchCV` now does sampling without
+     replacement if all parameters are given as lists. By `Andreas Müller`_.
+
+   - Parallelized calculation of :func:`pairwise_distances` is now supported
+     for scipy metrics and custom callables. By `Joel Nothman`_.
+
+   - Allow the fitting and scoring of all clustering algorithms in
+     :class:`pipeline.Pipeline`. By `Andreas Müller`_.
+
+   - More robust seeding and improved error messages in :class:`cluster.MeanShift`
+     by `Andreas Müller`_.
+
+   - Make the :class:`GMM` stopping criterion less dependent on the number of
+     samples by thresholding the average log-likelihood change instead of its
+     sum over all samples. By `Hervé Bredin`_
 
 Documentation improvements
 ..........................
@@ -180,6 +211,10 @@ Documentation improvements
    - :class:`sklearn.neighbors.BallTree` and :class:`sklearn.neighbors.KDTree`
      used to point to empty pages stating that they are aliases of BinaryTree.
      This has been fixed to show the correct class docs. By `Manoj Kumar`_.
+
+   - Added silhouette plots for analysis of KMeans clustering using
+     :func:`metrics.silhouette_samples` and :func:`metrics.silhouette_score`.
+     See :ref:`examples_cluster_plot_kmeans_silhouette_analysis.py`
 
 Bug fixes
 .........
@@ -238,13 +273,33 @@ Bug fixes
 
     - When `compute_full_tree` is set to "auto", the full tree is
       built when n_clusters is high and is early stopped when n_clusters is
-      low, while the behavor should be vice-versa in
+      low, while the behavior should be vice-versa in
       :class:`cluster.AgglomerativeClustering` (and friends).
       This has been fixed By `Manoj Kumar`_
 
     - Fix lazy centering of data in :func:`linear_model.enet_path` and
       :func:`linear_model.lasso_path`. It was centered around one. It has
-      been changed to be centred around the origin. By `Manoj Kumar`_
+      been changed to be centered around the origin. By `Manoj Kumar`_
+
+    - Fix handling of precomputed affinity matrices in
+      :class:`cluster.AgglomerativeClustering` when using connectivity
+      constraints. By `Cathy Deng`_
+
+    - Correct ``partial_fit`` handling of ``class_prior`` for
+      :class:`sklearn.naive_bayes.MultinomialNB` and
+      :class:`sklearn.naive_bayes.BernoulliNB`. By `Trevor Stephens`_.
+
+    - Fixed a crash in :func:`metrics.precision_recall_fscore_support`
+      when using unsorted ``labels`` in the multi-label setting.
+      By `Andreas Müller`_.
+
+    - Avoid skipping the first nearest neighbor in the methods ``radius_neighbors``,
+      ``kneighbors``, ``kneighbors_graph`` and ``radius_neighbors_graph`` in
+      :class:`sklearn.neighbors.NearestNeighbors` and family, when the query
+      data is not the same as fit data. By `Manoj Kumar`_.
+
+    - Fix log-density calculation in the :class:`mixture.GMM` with
+      tied covariance. By `Will Dawson`_
 
 API changes summary
 -------------------
@@ -301,8 +356,27 @@ API changes summary
       been removed. They were deprecated since 0.14
 
     - From now onwards, all estimators will uniformly raise ``NotFittedError``
-      (:class:`utils.validation.NotFittedError`), when any of the ``predict`` 
+      (:class:`utils.validation.NotFittedError`), when any of the ``predict``
       like methods are called before the model is fit. By `Raghav R V`_.
+
+    - Input data validation was refactored for more consistent input
+      validation. The ``check_arrays`` function was replaced by ``check_array``
+      and ``check_X_y``. By `Andreas Müller`_.
+
+    - Allow ``X=None`` in the methods ``radius_neighbors``, ``kneighbors``,
+      ``kneighbors_graph`` and ``radius_neighbors_graph`` in
+      :class:`sklearn.neighbors.NearestNeighbors` and family. If set to None,
+      then for every sample this avoids setting the sample itself as the
+      first nearest neighbor. By `Manoj Kumar`_.
+
+    - Add parameter ``include_self`` in :func:`neighbors.kneighbors_graph`
+      and :func:`neighbors.radius_neighbors_graph` which has to be explicitly
+      set by the user. If set to True, then the sample itself is considered
+      as the first nearest neighbor.
+
+    - `thresh` parameter is deprecated in favor of new `tol` parameter in
+      :class:`GMM`. See `Enhancements` section for details. By `Hervé Bredin`_.
+
 
 .. _changes_0_15_2:
 
@@ -407,6 +481,9 @@ Highlights
    - Added :class:`linear_model.RANSACRegressor` for robust regression
      models.
 
+   - Added dimensionality reduction with :class:`manifold.TSNE` which can be
+     used to visualize high-dimensional data.
+
 
 Changelog
 ---------
@@ -452,6 +529,8 @@ New features
 
    - Added :class:`linear_model.MultiTaskElasticNetCV` and
      :class:`linear_model.MultiTaskLassoCV`. By `Manoj Kumar`_.
+
+   - Added :class:`manifold.TSNE`. By Alexander Fabisch.
 
 Enhancements
 ............
@@ -3190,3 +3269,9 @@ David Huard, Dave Morrill, Ed Schofield, Travis Oliphant, Pearu Peterson.
 .. _Raghav R V: https://github.com/ragv
 
 .. _Trevor Stephens: http://trevorstephens.com/
+
+.. _Jan Hendrik Metzen: https://jmetzen.github.io/
+
+.. _Cathy Deng: https://github.com/cathydeng
+
+.. _Will Dawson: http://dawsonresearch.com
